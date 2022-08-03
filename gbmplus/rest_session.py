@@ -198,28 +198,50 @@ class RestSession(object):
             response.close()
         return None
 
+    def _user_session(self):
+        metadata = {
+            'tags': ['rest_session'],
+            'operation': 'authenticate'
+        }
+        resource = "https://auth.gbm.com/api/v1/session/user"
+        payload = {"clientid": self._client_id, "user": self._user_email, "password": self._user_password}
+        return self.post(metadata, resource, payload)
+
+    def _user_session_challenge(self, session, two_factor_token):
+        metadata = {
+            'tags': ['rest_session'],
+            'operation': 'authenticate'
+        }
+        resource = "https://auth.gbm.com/api/v1/session/user/challenge"
+        # mfaCode
+        payload = {
+            "challengeType": "SOFTWARE_TOKEN_MFA",
+            "session": session,
+            "user": self._user_email,
+            "code": two_factor_token,
+            "clientId": self._client_id,
+            "applicationName": "GBM+ Trading Pro"
+        }
+        return self.post(metadata, resource, payload)
+
     def authenticate(self): 
         """
         **Authenticates user**
         https://auth.gbm.com/api/v1/session/user
         """
-
-        metadata = {
-            'tags': ['rest_session'],
-            'operation': 'authenticate'
-        }
-
-        resource = "https://auth.gbm.com/api/v1/session/user"
-
-        payload = {"clientid": self._client_id, "user": self._user_email, "password": self._user_password}
-
-        response = self.post(metadata, resource, payload)
-
+        response = self._user_session()
         if response:
+            if response.get("challengeInfo"):
+                res = response.get("challengeInfo")
+                t2fa_token = input("Código: ")
+                response = self._user_session_challenge(res["session"], t2fa_token)
             self._access_token = response.get('accessToken')
-
-            # Update session headers with authentication
-            self._req_session.headers['Authorization'] = 'Bearer ' + self._access_token                                             
+            if self._access_token :
+                    # Update session headers with authentication
+                    self._access_token = response.get('accessToken')
+                    self._req_session.headers['Authorization'] = 'Bearer ' + self._access_token
+            else:
+                raise AuthenticationError()
         else:
             raise AuthenticationError()
 
@@ -240,3 +262,4 @@ class RestSession(object):
 
         if response:
             self._main_contract_id = response.get('contract_id')
+
